@@ -1,0 +1,36 @@
+services:                              # раздел со списком сервисов (каждый сервис = один контейнер)
+
+  db:                                  # имя сервиса; по нему другие контейнеры обращаются к базе (DB_HOST: db)
+    image: postgres:16                 # готовый образ с Docker Hub, версия 16
+    environment:                       # переменные окружения внутри контейнера
+      POSTGRES_USER: ${DB_USER}        # имя пользователя БД; значение берётся из файла .env
+      POSTGRES_PASSWORD: ${DB_PASSWORD}  # пароль пользователя, тоже из .env
+      POSTGRES_DB: ${DB_NAME}          # имя базы, которую Postgres создаст при первом запуске
+    volumes:                           # подключение хранилищ данных
+      - pgdata:/var/lib/postgresql/data  # том pgdata смонтирован в папку, где Postgres хранит данные
+    healthcheck:                       # проверка, что база готова принимать подключения
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]  # команда проверки: pg_isready отвечает «готов» или нет
+      interval: 3s                     # как часто проверять
+      timeout: 3s                      # сколько ждать ответа на одну проверку
+      retries: 10                      # сколько неудач подряд допустимо, прежде чем считать сервис нерабочим
+
+  app:                                 # сервис с твоим Python-скриптом
+    build: .                           # собрать образ по Dockerfile из текущей папки
+    depends_on:                        # зависимости: app стартует после db
+      db:
+        condition: service_healthy     # ждать не просто запуска db, а успешного healthcheck
+    environment:                       # переменные, которые читает main.py через os.environ
+      DB_HOST: db                      # адрес базы = имя сервиса db
+      DB_NAME: ${DB_NAME}              # имя базы из .env
+      DB_USER: ${DB_USER}              # пользователь из .env
+      DB_PASSWORD: ${DB_PASSWORD}      # пароль из .env
+
+  adminer:                             # веб-интерфейс для просмотра базы (необязательный)
+    image: adminer                     # готовый образ Adminer
+    ports:                             # проброс портов наружу
+      - "8080:8080"                    # порт_компьютера:порт_контейнера; открывается на http://localhost:8080
+    depends_on:                        # запускать после db
+      - db
+
+volumes:                               # объявление томов, которые используются выше
+  pgdata:                              # создаёт именованный том pgdata (данные живут, пока том не удалён)
